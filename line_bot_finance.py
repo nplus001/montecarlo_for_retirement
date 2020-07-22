@@ -9,13 +9,13 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage, FollowEve
 import numpy as np
 import json
 import ast
-from datetime import datetime
 
 app = Flask(__name__)
 
-line_bot_api = LineBotApi('oXzqvxp1Qp8Y6Z8DkV1rHkwEluDsHoCEvSyxkIQc3CMiWFb7UfUpPtsM0uBPh9O/TSD5jDnopO+WF7qDCk2+DCJuKDdZZQgmWaPjOKsjxib0PnZpnPwv5HbgcFAAHYq6VEiE+OfjUNL5LoSABJiN/wdB04t89/1O/w1cDnyilFU=')
-handler = WebhookHandler('b2102d21af4ca2a88ae065db102828d7')
+secrets = json.load(open('secrets.json'))
 
+line_bot_api = LineBotApi(secrets["line_access_token"])
+handler = WebhookHandler(secrets["webhook_handler"])
 
 def simple_cash_required_at_retirement(years_after_retirement, spending_per_month_now):
     """
@@ -169,7 +169,7 @@ def handle_message(event):
 		user[event.source.user_id]['years_after_retirement'] = years_after_retirement
 		user[event.source.user_id]['spend_per_month_in_pv'] = spend_per_month_in_pv
 
-		line_bot_api.reply_message(event.reply_token, TextMessage(text="Okay, what about your investment assumptions?"))
+		line_bot_api.reply_message(event.reply_token, TextMessage(text="Next, please specify your investment assumptions."))
 
 	elif 'assumptions' in received_msg_l:
 		_, assumptions_text = received_msg_l.split('=')
@@ -178,9 +178,8 @@ def handle_message(event):
 		user[event.source.user_id]['inv_mean'] = inv_mean
 		user[event.source.user_id]['inv_std'] = inv_std
 
-		line_bot_api.reply_message(event.reply_token, TextMessage(text="Okay, you can adjust your profile and assumptions. Once your're ready, type 'run' to start the simulation"))
+		line_bot_api.reply_message(event.reply_token, TextMessage(text="You can adjust your profile and assumptions by resending messages. Once you're ready, type 'run' to start the simulation"))
 
-	# scan for calling message
 	elif 'run' in received_msg_l:
 		
 		# stay in active mode
@@ -204,19 +203,17 @@ def handle_message(event):
 
 		fv_profiles = fv_cash_required_at_retirement(age, retirement_age, years_after_retirement, spend_per_month_in_pv, ann_inf, ann_int)
 
-		retirement_saving_goal = int(np.percentile(fv_profiles, 95))
+		retirement_saving_goal = f'{int(round(np.percentile(fv_profiles, 95), -5)):,}'
 
 		# saving
 		constant_saving, growth_saving = get_monthly_saving(age, retirement_age, fv_profiles, ann_int, annual_saving_growth=0.05)
 		
-		constant_saving_95 = str(int(np.percentile(constant_saving, 95)))
-		start_saving_95 = str(int(np.percentile(growth_saving[:,0], 95)))
-
-		print(constant_saving_95, start_saving_95)
+		constant_saving_95 = f'{int(round(np.percentile(constant_saving, 95),-2)):,}'
+		start_saving_95 = f'{int(round(np.percentile(growth_saving[:,0], 95),-2)):,}'
 
 		# reply
-		line_bot_api.reply_message(event.reply_token, TextMessage(text="Cash needed at retirement day: {0} THB. ".format(retirement_saving_goal) + 
-			"You need to constantly save {0} THB per month or start with {1} THB per month now and increase it 5% per year".format(constant_saving_95,start_saving_95)))
+		line_bot_api.reply_message(event.reply_token, TextMessage(text="You will need {0} at your retirement date. ".format(retirement_saving_goal) +
+			"From now until your retirement, you can either save a fix amount of {0} per month or start with {1} per month now and increase it by 5% per year in order to reach your goal.".format(constant_saving_95,start_saving_95)))
 
 if __name__ == "__main__":
 	app.run()
